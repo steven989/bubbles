@@ -1,0 +1,238 @@
+<script   src="https://code.jquery.com/jquery-3.1.1.min.js"   integrity="sha256-hVVnYaiADRTO2PzUGmuLJr8BLUSjGIZsDYGmIJLv2b8="   crossorigin="anonymous"></script>
+<script>
+$(function(){
+    var currentBubbleId = 1;
+    $('#newBubble').on('click',function(){
+
+        var randomCloseness = Math.round(Math.random()*100);
+        var randomQuality = Math.round(Math.random()*100);
+
+        rawDataArray.push({
+            id:currentBubbleId,
+            distance:parseInt($("#inputs").children().filter(function(){return $(this).data("bubble-id") == currentBubbleId}).find('.closeness').val()),
+            size:parseInt($("#inputs").children().filter(function(){return $(this).data("bubble-id") == currentBubbleId}).find('.quality').val())
+        });
+
+        $('#inputs').append('<form class="bubbleSpecsInput" data-bubble-id="'+(currentBubbleId+1)+'"><label for="bubble'+(currentBubbleId+1)+'Closeness">Closeness</label><input name="bubble'+(currentBubbleId+1)+'" type="number" class="closeness" value="'+randomCloseness+'"/><label for="bubble'+(currentBubbleId+1)+'Quality">Quality</label><input name="bubble'+(currentBubbleId+1)+'" type="number" class="quality" value="'+randomQuality+'"/></form>');
+        currentBubbleId++;
+        createPositionsForBubbles(rawDataArray);
+    });
+    createPositionsForBubbles(rawDataArray);
+})
+    
+
+    var result = [];
+    var rawDataArray = [
+        // {id:1,distance:10,size:20},
+        // {id:2,distance:12,size:5},
+        // {id:3,distance:4,size:8},
+        // {id:4,distance:10,size:18},
+        // {id:5,distance:6,size:9},
+        // {id:6,distance:15,size:12},
+        // {id:7,distance:14,size:22},
+        // {id:8,distance:13,size:14},
+        // {id:9,distance:20,size:25},
+        // {id:10,distance:7,size:3}
+        ];
+
+    var centerBubble = {x:300,y:300,radius:50};
+    var sizeOfGapBetweenBubbles = 4;
+    var scaledBubblesArray;
+    var positionedBubblesArray = [];
+    var minDistance = 5;   //distance to the center of the closest bubble
+    var maxDistance = 150;  //distance to the center of the farthest bubble
+    var minBubbleSize = 25; //radius of the smallest bubble
+    var maxBubbleSize = 50; //radius of the largest bubble
+    var numberOfRecursion = 10;
+
+    function createPositionsForBubbles(bubblesArray) {
+
+        // 0) clear the existing array and scale the raw bubble data
+        clearExistingBubbles();
+        updateParameters();
+        scaledBubblesArray = scaleRawArray(bubblesArray,minDistance,maxDistance,minBubbleSize,maxBubbleSize);
+        // 1) add the center bubble
+        positionedBubblesArray.push({id:0,x:centerBubble.x,y:centerBubble.y,radius:centerBubble.radius});
+
+        // 2) order bubblesArray using size from the biggest to smallest
+        scaledBubblesArray = scaledBubblesArray.sort(function(a,b){return a.distance > b.distance});
+
+        // 3) loop through the reordered bubblesArray
+        scaledBubblesArray.forEach(function(scaledBubble){
+            //3.1) generate the next alpha value
+            var alpha = generateNextAlpha();
+            //3.2) generate r - distance between center bubble and this bubble to place
+            var r = centerBubble.radius + sizeOfGapBetweenBubbles + Math.max(scaledBubble.radius,scaledBubble.distance);
+            //3.3) determine (x,y) of this bubble given the alpha value and r
+            var candidateX = Math.cos(toRadians(alpha))*r + centerBubble.x;
+            var candidateY = Math.sin(toRadians(alpha))*r + centerBubble.y;
+            //3.4) verify the (x,y) to see if it meets the constraints
+            var positionVerificationResult = verifyPosition(candidateX,candidateY,scaledBubble.radius,scaledBubble.id);
+            
+            //3.5) if 3.4 returns true, then place this into the positioned array. Otherwise run the failedInitialPositionVerification function for the next round of positioning
+            if (positionVerificationResult) {
+                positionedBubblesArray.push({id:scaledBubble.id,x:candidateX,y:candidateY,radius:scaledBubble.radius});
+            } else {
+                var result = failedInitialPositionVerification(scaledBubble.id,alpha,r,scaledBubble.radius,10,0,numberOfRecursion);
+                if (result.positionVerified) {
+                    positionedBubblesArray.push({id:scaledBubble.id,x:result.x,y:result.y,radius:scaledBubble.radius});
+                } else {
+                    positionedBubblesArray.push({id:scaledBubble.id,x:candidateX,y:candidateY,radius:scaledBubble.radius});
+                }
+            };
+        });
+
+        visualizeBubbles();
+    }
+
+
+    function failedInitialPositionVerification(id,optimalAlpha,r,radius,rIncrementOnRecursion,recursionCounter,maxRecursion) {
+        var result={positionVerified:false};
+        // 1) loop through alpha = 1...180, for each of these, check + and -, return the first verified alpha
+        for(var i=1; i<=180; i++){
+            [1,-1].forEach(function(direction){
+                var alpha = direction*i + optimalAlpha;
+                var candidateX = Math.cos(toRadians(alpha))*r+centerBubble.x;
+                var candidateY = Math.sin(toRadians(alpha))*r+centerBubble.y;
+                //  2.1) verify each calculated (x,y) with the verifyPosition function record the output in the array created in this function
+                if (verifyPosition(candidateX,candidateY,radius,id)) {
+                    result = {positionVerified: true, x:candidateX,y:candidateY};
+                    return true;
+                }
+            });
+            if (result.positionVerified) {break;}
+        };
+        
+        if (result.positionVerified || recursionCounter >= maxRecursion) {
+            return result;
+        } else {
+            // 2) if no object is found, call this function with an incremented r (recursion)
+            return failedInitialPositionVerification(id,optimalAlpha,r+rIncrementOnRecursion,radius,rIncrementOnRecursion,recursionCounter+1,maxRecursion);            
+        }
+    }
+
+    function verifyPosition(xCandidate,yCandidate,radiusOfCandidateBubble,id) {
+        // for all already-positioned bubbles, check to see if the new bubble won't overlap with it. If the new bubble will overlap with any of the already-positioned bubbles, return false. Otherwise return true.
+        var failedCount = 0;
+        positionedBubblesArray.forEach(function(bubbleToCheckAgainst){
+            var c = radiusOfCandidateBubble + bubbleToCheckAgainst.radius + sizeOfGapBetweenBubbles;
+            var xToCheckAgainst = bubbleToCheckAgainst.x;
+            var yToCheckAgainst = bubbleToCheckAgainst.y;
+            
+            if (Math.sqrt(Math.pow(xCandidate-xToCheckAgainst,2)+Math.pow(yCandidate-yToCheckAgainst,2))<c) {
+                failedCount++;
+                return false;
+            }
+        });
+        if (failedCount>0) {
+            return false;
+        } else {
+            return true;    
+        }
+    }
+
+    // need a set of counters for the generateNextAlpha function
+    var quarterCounter = 0;
+    var cycleCounter = 0;
+    var cycleOffsetLookup = [0,180,90,270];
+    var quarterTopAnglesArray = [90,45,67.5,22.5,78.75,11.25,56.25,33.75,84.425,5.625,73.125,16.875,61.875,28.125,50.625,39.375];
+
+    function generateNextAlpha() { //alpha is the angle relative to the center to place the bubble
+        var valueToReturn = quarterTopAnglesArray[quarterCounter] + cycleOffsetLookup[cycleCounter];
+            quarterCounter = cycleCounter >= 3 ? (quarterCounter >= quarterTopAnglesArray.length-1 ? 0 : quarterCounter+1) : quarterCounter;
+            cycleCounter = cycleCounter >= 3 ? 0 : cycleCounter+1;
+        return valueToReturn
+    }
+
+    function visualizeBubbles() {
+        positionedBubblesArray.forEach(function(positionedBubble){
+            $('#canvas').append('<div style="width:'+positionedBubble.radius*2+'px; height:'+positionedBubble.radius*2+'px; background:white; border-radius:100%; position:absolute; left:'+(positionedBubble.x - positionedBubble.radius)+'px; bottom:'+(positionedBubble.y - positionedBubble.radius)+'px;text-align:center"></div>');
+
+        });
+    }
+
+    //utility functions to scale the bubbles array
+
+    function scaleRawArray(rawDataArray,minDistance,maxDistance,minBubbleSize,maxBubbleSize) { 
+        var mappedDistances = rawDataArray.map(function(bubbleDataObject){
+            return bubbleDataObject.distance;
+        });
+        var mappedSizes = rawDataArray.map(function(bubbleDataObject){
+            return bubbleDataObject.size;
+        });
+        var minmaxDistance = [Math.min.apply(null, mappedDistances),Math.max.apply(null, mappedDistances)];
+        var minmaxSize = [Math.min.apply(null, mappedSizes),Math.max.apply(null, mappedSizes)];
+        return rawDataArray.map(function(bubbleDataObject){
+            return {
+                id:bubbleDataObject.id,
+                distance:Math.round(scale(bubbleDataObject.distance,minmaxDistance[0],minmaxDistance[1],minDistance,maxDistance)*100.00)/100.00,
+                radius:Math.round(scale(bubbleDataObject.size,minmaxSize[0],minmaxSize[1],minBubbleSize,maxBubbleSize)*100.00)/100.00
+            }
+        });
+    }
+
+    function scale(numberToScale,actualMin,actualMax,desiredMin,desiredMax) { //linear scaling for now
+        if (actualMin == actualMax) {
+            return desiredMin;
+        } else {
+            var m = (desiredMax-desiredMin)*1.0/(actualMax-actualMin)*1.0; // m = (y2-y1)/(x2-x1)
+            var b = desiredMax - m*actualMax; // b=y-mx
+            return m*numberToScale + b;            
+        }
+    }
+
+    //utility function to convert degrees to radians
+    function toRadians(degrees) {
+        return degrees * (Math.PI/180);
+    }
+
+    // utility function to clear the existing bubbles and reset necessary counters
+    function clearExistingBubbles() {
+        $('#canvas').html("");
+        scaledBubblesArray = [];
+        positionedBubblesArray = [];
+        quarterCounter = 0;
+        cycleCounter = 0;
+    }
+
+    // utility function to update parameters based on user input
+    function updateParameters() {
+        sizeOfGapBetweenBubbles = parseInt($('#gapBetweenBubbles').val());
+        minDistance = parseInt($('#minimumDistance').val());   //distance to the center of the closest bubble
+        maxDistance = parseInt($('#maximumDistance').val());  //distance to the center of the farthest bubble
+        minBubbleSize = parseInt($('#minimumSize').val()); //radius of the smallest bubble
+        maxBubbleSize = parseInt($('#maximumSize').val()); //radius of the largest bubble        
+        numberOfRecursion = parseInt($('#numberOfRecursion').val());
+
+    }
+
+</script>
+<div id="canvas" style="background:gray; width:600px; height:600px; position: relative;">
+</div>
+<div id="inputs">
+    <button id="newBubble">Add A Bubble To Canvas</button><br><br>
+    Parameters
+    <form class="parameters">
+        <label for="gapBetweenBubbles">Minimum Gap Between Bubbles (px)</label>
+        <input name="gapBetweenBubbles" type="number" id="gapBetweenBubbles" value='4'/><br>
+        <label for="minimumDistance">Minimum Distance from the Center of the Central Bubble (px)</label>
+        <input name="minimumDistance" type="number" id="minimumDistance" value='5'/><br>
+        <label for="maximumDistance">Maximum Distance from the Center of the Central Bubble (px)</label>
+        <input name="maximumDistance" type="number" id="maximumDistance" value='150'/><br>
+        <label for="minimumSize">Minimum Size of the Bubbles (px)</label>
+        <input name="minimumSize" type="number" id="minimumSize" value='25'/><br>
+        <label for="maximumSize">Maximum Size of the Bubbles (px)</label>
+        <input name="maximumSize" type="number" id="maximumSize" value='50'/><br>
+        <label for="numberOfRecursion">Number of Recursion (higher number reduces chance of overlap but increases rendering time)</label>
+        <input name="numberOfRecursion" type="number" id="numberOfRecursion" value='10'/><br>
+    </form>
+    <br>
+    Individual Bubbles (the stats here are the "raw" numbers the backend would calculate. These are then scaled to the canvas based on the parameter above)
+    <form class="bubbleSpecsInput" data-bubble-id="1">
+        <label for="bubble1Closeness">Closeness</label>
+        <input name="bubble1" type="number" class="closeness" value='24'/>
+        <label for="bubble1Quality">Quality</label>
+        <input name="bubble1" type="number" class="quality" value='12'/>
+    </form>
+</div>
+
