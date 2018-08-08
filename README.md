@@ -14,11 +14,3 @@ What makes this unique and different from the available plugins are:
 In the end, I used a combination of trignometry and pythagorean theorem, coupled with loop and recursion to accomplish this. 
 
 Hopefully I can turn this into a ready-to-use plugin for other people at some point. If anyone has the skillset to do so, feel free to fork and change the code as necessary.
-
-
-[Use travel info and guide](https://www.thetravelbrief.com)  
-[Crowdsourced travel guide](https://wikitravel.org)  
-[Travel guide in Chinese](https://www.mafengwo.cn)  
-[Hotel reviews](https://www.tripadvisor.com)  
-[Cheapest flights](https://www.skyscanner.com)
-
